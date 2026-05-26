@@ -1,0 +1,27 @@
+# Carpetas de compilación y artefactos
+build/
+build_mingw/
+build_vs/
+bin/
+obj/
+out/
+
+# Archivos de configuración de IDEs y Editores
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln
+*.vcxproj
+*.filters
+*.db
+*.opendb
+
+# Archivos ROM (para evitar problemas de copyright y archivos pesados)
+*.bin
+*.rom
+
+# Temporales del sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini

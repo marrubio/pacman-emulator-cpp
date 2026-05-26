@@ -1,0 +1,234 @@
+#include "game.hpp"
+#include "raylib.h"
+#include <iostream>
+
+Game::Game()
+    : m_is_running(false)
+{
+}
+
+bool Game::Initialize() {
+    // 1. Inicializar el renderizador gráfico
+    if (!m_renderer.Initialize()) {
+        return false;
+    }
+
+    // 2. Intentar cargar el archivo ROM original de Pac-Man Z80 si existe
+    // Si no existe, continuará con el mapa por defecto interactivo
+    m_memory.LoadROM("pacman.bin");
+
+    // 3. Rellenar la memoria simulada con el mapa y configuraciones iniciales
+    InitializeDefaultMaze();
+
+    m_is_running = true;
+    return true;
+}
+
+void Game::Run() {
+    // Frecuencia de refresco real de Pac-Man arcade: ~60.606 Hz
+    const double frame_time = 1.0 / 60.606;
+    double accumulated_time = 0.0;
+    double last_time = GetTime();
+
+    while (m_is_running && !m_renderer.ShouldClose()) {
+        double current_time = GetTime();
+        double elapsed = current_time - last_time;
+        last_time = current_time;
+        accumulated_time += elapsed;
+
+        // 1. Leer entradas de teclado
+        ProcessInput();
+
+        // 2. Ejecutar frames acumulados de física a velocidad fija
+        while (accumulated_time >= frame_time) {
+            Update(frame_time);
+            accumulated_time -= frame_time;
+        }
+
+        // 3. Renderizar el frame actual
+        m_renderer.Render(m_memory);
+    }
+}
+
+void Game::Shutdown() {
+    m_renderer.Shutdown();
+    m_is_running = false;
+    std::cout << "Juego finalizado de manera correcta." << std::endl;
+}
+
+void Game::ProcessInput() {
+    // Obtener la posición actual de Pac-Man desde la memoria física emulada
+    // Registros en 5060h y 5061h
+    uint8_t py = m_memory.ReadByte(0x5060);
+    uint8_t px = m_memory.ReadByte(0x5061);
+
+    int speed = 1; // Velocidad de Pac-Man en píxeles por frame
+
+    // Procesar teclado mediante Raylib y escribir en la memoria emulada
+    if (IsKeyDown(KEY_RIGHT)) {
+        px -= speed; // En hardware real de Pac-Man, X decrece hacia la derecha
+    }
+    if (IsKeyDown(KEY_LEFT)) {
+        px += speed; // X incrementa hacia la izquierda
+    }
+    if (IsKeyDown(KEY_UP)) {
+        py -= speed; // Y decrece hacia arriba
+    }
+    if (IsKeyDown(KEY_DOWN)) {
+        py += speed; // Y incrementa hacia abajo
+    }
+
+    // Mantener dentro de los límites de la pantalla playable
+    if (px < 8) px = 8;
+    if (px > 220) px = 220;
+    if (py < 16) py = 16;
+    if (py > 240) py = 240;
+
+    // Escribir la nueva posición de Pac-Man de vuelta a los registros
+    m_memory.WriteByte(0x5060, py);
+    m_memory.WriteByte(0x5061, px);
+
+    // Mapear los controles también a los registros de puertos de entrada IN0 (5000h)
+    m_memory.SetP1Button(0x01, IsKeyDown(KEY_UP));    // Bit 0: Arriba
+    m_memory.SetP1Button(0x02, IsKeyDown(KEY_LEFT));  // Bit 1: Izquierda
+    m_memory.SetP1Button(0x04, IsKeyDown(KEY_RIGHT)); // Bit 2: Derecha
+    m_memory.SetP1Button(0x08, IsKeyDown(KEY_DOWN));  // Bit 3: Abajo
+}
+
+void Game::Update(double delta_time) {
+    (void)delta_time; // Sin usar por ahora en demostración
+
+    // Obtener la posición en píxeles de Pac-Man para realizar detección de colisiones con los puntos
+    uint8_t py = m_memory.ReadByte(0x5060);
+    uint8_t px = m_memory.ReadByte(0x5061);
+
+    // Convertir la coordenada en píxeles de Pac-Man a coordenadas de baldosa (tile) de 8x8
+    int tile_x = (272 - px) / 8;
+    int tile_y = py / 8;
+
+    if (tile_x >= 0 && tile_x < 28 && tile_y >= 0 && tile_y < 36) {
+        uint16_t tile_address = 0x4000 + (tile_y * 32 + tile_x);
+        uint8_t tile_content = m_memory.ReadByte(tile_address);
+
+        // Si Pac-Man está sobre una pastilla (tile 0x10) o energizante (tile 0x14)
+        if (tile_content == 0x10 || tile_content == 0x14) {
+            // Eliminar pastilla escribiendo 0x00 (vacío) en VRAM
+            m_memory.WriteByte(tile_address, 0x00);
+
+            // Incrementar puntuación en la RAM (4E80h en adelante es la puntuación del P1 en BCD)
+            // Para demostración, incrementamos directamente los dígitos en BCD
+            uint8_t score_low = m_memory.ReadByte(0x4E80);
+            score_low += 10; // Sumar 10 puntos en BCD
+            
+            if ((score_low & 0x0F) >= 0x0A) {
+                score_low += 6; // Ajuste decimal BCD
+            }
+            if (score_low >= 0xA0) {
+                score_low = 0;
+                uint8_t score_mid = m_memory.ReadByte(0x4E81);
+                score_mid += 1;
+                if ((score_mid & 0x0F) >= 0x0A) score_mid += 6;
+                m_memory.WriteByte(0x4E81, score_mid);
+            }
+            
+            m_memory.WriteByte(0x4E80, score_low);
+        }
+    }
+}
+
+void Game::InitializeDefaultMaze() {
+    // Mapa clásico de Pac-Man representado en ASCII
+    // #: Muro, .: Pastilla pequeña, o: Energizante grande, G: Casa de Fantasmas
+    const char* original_maze[36] = {
+        "                            ", // Row 0 (HUD Score)
+        "                            ", // Row 1
+        "############################", // Row 2 (Muro Superior)
+        "#............##............#", // Row 3
+        "#.####.#####.##.#####.####.#", // Row 4
+        "#o####.#####.##.#####.####o#", // Row 5
+        "#.####.#####.##.#####.####.#", // Row 6
+        "#..........................#", // Row 7
+        "#.####.##.########.##.####.#", // Row 8
+        "#.####.##.########.##.####.#", // Row 9
+        "#......##....##....##......#", // Row 10
+        "######.##### ## #####.######", // Row 11
+        "     #.##### ## #####.#     ", // Row 12
+        "     #.##          ##.#     ", // Row 13
+        "     #.## ######## ##.#     ", // Row 14
+        "######.## #      # ##.######", // Row 15
+        "      .   # GGGG #   .      ", // Row 16 (Túneles laterales)
+        "######.## #      # ##.######", // Row 17
+        "     #.## ######## ##.#     ", // Row 18
+        "     #.##          ##.#     ", // Row 19
+        "     #.## ######## ##.#     ", // Row 20
+        "######.## ######## ##.######", // Row 21
+        "#............##............#", // Row 22
+        "#.####.#####.##.#####.####.#", // Row 23
+        "#.####.#####.##.#####.####.#", // Row 24
+        "#o..##................##..o#", // Row 25
+        "###.##.##.########.##.##.###", // Row 26
+        "###.##.##.########.##.##.###", // Row 27
+        "#......##....##....##......#", // Row 28
+        "#.##########.##.##########.#", // Row 29
+        "#.##########.##.##########.#", // Row 30
+        "#..........................#", // Row 31
+        "############################", // Row 32
+        "                            ", // Row 33
+        "                            ", // Row 34
+        "                            "  // Row 35
+    };
+
+    // 1. Cargar el mapa ASCII en la VRAM emulada
+    for (int y = 0; y < 36; ++y) {
+        for (int x = 0; x < 28; ++x) {
+            uint16_t tile_address = 0x4000 + (y * 32 + x);
+            uint16_t color_address = 0x4400 + (y * 32 + x);
+
+            char ch = original_maze[y][x];
+            uint8_t tile_value = 0x00;
+            uint8_t color_attr = 0x07; // Color blanco por defecto
+
+            if (ch == '#') {
+                tile_value = 0x01; // Baldosa de muro
+                color_attr = 0x07; // Atributo azul para muros
+            } else if (ch == '.') {
+                tile_value = 0x10; // Baldosa de pastilla
+                color_attr = 0x02; // Atributo color piel
+            } else if (ch == 'o') {
+                tile_value = 0x14; // Baldosa de energizante
+                color_attr = 0x02;
+            }
+
+            m_memory.WriteByte(tile_address, tile_value);
+            m_memory.WriteByte(color_address, color_attr);
+        }
+    }
+
+    // 2. Establecer variables de estado iniciales en la RAM
+    m_memory.WriteByte(0x4E6F, 3); // 3 vidas iniciales
+    m_memory.WriteByte(0x4E80, 0x00); // Puntuación inicial a 0
+    m_memory.WriteByte(0x4E81, 0x00);
+    m_memory.WriteByte(0x4E88, 0x50); // Puntuación máxima por defecto (5000 puntos en BCD)
+    m_memory.WriteByte(0x4E89, 0x00);
+
+    // 3. Inicializar posiciones de los Sprites en los registros emulados
+    // Sprite 0: Pac-Man (Posición inicial en el laberinto: X = 116, Y = 208)
+    m_memory.WriteByte(0x5060, 208); // Posición Y
+    m_memory.WriteByte(0x5061, 116); // Posición X
+
+    // Sprite 1: Blinky (Fantasma Rojo)
+    m_memory.WriteByte(0x5062, 112); // Posición Y
+    m_memory.WriteByte(0x5063, 116); // Posición X
+
+    // Sprite 2: Pinky (Fantasma Rosa)
+    m_memory.WriteByte(0x5064, 136); // Posición Y
+    m_memory.WriteByte(0x5065, 116); // Posición X
+
+    // Sprite 3: Inky (Fantasma Azul)
+    m_memory.WriteByte(0x5066, 136); // Posición Y
+    m_memory.WriteByte(0x5067, 96);  // Posición X
+
+    // Sprite 4: Clyde (Fantasma Naranja)
+    m_memory.WriteByte(0x5068, 136); // Posición Y
+    m_memory.WriteByte(0x5069, 136); // Posición X
+}
