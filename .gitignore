@@ -17,9 +17,10 @@ out/
 *.db
 *.opendb
 
-# Archivos ROM (para evitar problemas de copyright y archivos pesados)
+# Archivos ROM y Ensamblador (para evitar problemas de copyright y archivos pesados)
 *.bin
 *.rom
+pacman.asm
 
 # Temporales del sistema operativo
 .DS_Store
