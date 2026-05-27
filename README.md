@@ -1,145 +1,123 @@
-# Guía de Desarrollo y Ejecución: Pac-Man Z80
+# Pac-Man: Port Nativo x86 y Simulador de Hardware Z80
 
-Este documento sirve como manual técnico y guía de referencia para desarrolladores y **agentes de IA** que interactúen con este repositorio. Contiene los detalles de la arquitectura del hardware original, mapa de memoria, requisitos de compilación, instrucciones de emulación y mejores prácticas para la modificación del código fuente.
+Este proyecto tiene como objetivo principal ejecutar el clásico **Pac-Man (1980)** de forma nativa en arquitecturas modernas (x86/x64) mediante la simulación en C++ del mapa de memoria y los registros del hardware arcade original basado en el procesador **Zilog Z80**. 
 
----
-
-## 1. Introducción al Proyecto
-
-El motor original del juego **Pac-Man (1980)** de Namco/Midway fue programado en lenguaje ensamblador para la CPU **Zilog Z80**, un microprocesador de 8 bits muy popular en la edad de oro de los videojuegos arcade.
-
-Para el desarrollo y emulación local, se trabaja a partir de una versión desensamblada, comentada y totalmente estructurada de dicho código binario original:
-*   [Desensamblado de Pac-Man por Cubeman (pacman.asm)](http://cubeman.org/arcade-source/pacman.asm) (Referencia clásica comentada).
-*   [Traducción anotada y comentada de mburkley/pacman-c](https://github.com/mburkley/pacman-c) (Mantiene el ensamblador original como comentarios de C).
-
-El código fuente de este ensamblador se compila en un bloque binario plano de **16 KB (16,384 bytes)** que representa toda la lógica de ejecución del juego, incluyendo el bucle principal, la inteligencia artificial de los fantasmas (Blinky, Pinky, Inky y Clyde), las físicas del mapa, los patrones de fruta, el cálculo de puntuaciones y la reproducción de audio.
+A partir del desensamblado del código original en ensamblador Z80, se ha estructurado una **versión beta en C++** que simula el comportamiento físico del mueble arcade. Esta base sirve para estudiar, depurar y completar la lógica del juego directamente de forma nativa sin necesidad de un emulador externo de Z80, recreando la experiencia del hardware clásico a través de una capa de software moderna.
 
 ---
 
-## 2. Mapa de Memoria del Hardware Original
+## 1. Estructura y Contenido de `pacman_cpp`
 
-El hardware arcade de Pac-Man utiliza un direccionamiento de memoria de 16 bits (rango `0000h` a `FFFFh`). La memoria física está mapeada de la siguiente manera:
+La carpeta `pacman_cpp` contiene la implementación en C++ del port nativo y el simulador de hardware. Utiliza la biblioteca gráfica **Raylib** para renderizar la pantalla y capturar las entradas de teclado a bajo nivel.
 
-| Rango de Direcciones (Hex) | Tamaño | Descripción del Componente / Función |
-| :--- | :--- | :--- |
-| `0000h` - `3FFFh` | 16 KB | **ROM del Juego**: Almacena el código ejecutable y las tablas de datos fijas del juego. |
-| `4000h` - `43FFh` | 1 KB | **Video RAM (VRAM)**: Mapeo de la matriz de la pantalla para los mosaicos (tiles). |
-| `4400h` - `47FFh` | 1 KB | **Color RAM**: Atributos de color y paleta de cada mosaico en pantalla. |
-| `4800h` - `4BFFh` | 1 KB | Espacio reservado / RAM libre auxiliar. |
-| `4C00h` - `4FFFh` | 1 KB | **RAM del Sistema (Working RAM)**: Variables del juego, puntuaciones y estados. |
-| `5000h` - `50FFh` | 256 B | **I/O Mapeado en Memoria**: Puertos de entrada/salida para controles, sonido y hardware. |
+A continuación se detalla la estructura y propósito de cada archivo en `pacman_cpp/src/`:
 
-### Direcciones de Variables Críticas (RAM del Sistema)
-*   **`4370h`**: Número de jugadores actuales (`00h` = 1 jugador, `01h` = 2 jugadores).
-*   **`4E66h`**: Estado y registro de las ranuras de monedas.
-*   **`4E80h` - `4E83h`**: Puntuación del Jugador 1 (almacenado en formato BCD - Código Binario Decimal).
-*   **`4E84h` - `4E87h`**: Puntuación del Jugador 2 (formato BCD).
-*   **`4E88h` - `4E8Bh`**: Puntuación Máxima (High Score) histórica del mueble arcade.
-*   **`4E8Ch` - `4E9Bh`**: Registros para la frecuencia y volumen del sonido.
-
-### Registros de Entrada/Salida (I/O) Mapeados
-*   **`5000h` (Lectura)**: Puerto de entrada `IN0`. Mapea controles del Jugador 1 (Arriba, Abajo, Izquierda, Derecha, Moneda 1, Moneda 2, etc.).
-*   **`5000h` (Escritura)**: Habilitación de interrupciones de hardware (VBLANK). Escribir `01h` habilita la interrupción.
-*   **`5001h` (Lectura)**: Puerto de entrada `IN1`. Mapea controles del Jugador 2 y botones de selección de inicio (Start 1P, Start 2P).
-*   **`5001h` (Escritura)**: Habilitación del generador de sonido personalizado (Namco WSG).
-*   **`5002h` (Lectura)**: Dip Switches (`DSW1`). Permite configurar dificultad, vidas iniciales (`4E6Fh`), y costos de créditos.
-*   **`5003h` (Escritura)**: Voltear pantalla (`Flip Screen`) para modo cóctel de 2 jugadores.
-*   **`50C0h` (Escritura)**: **Watchdog Reset**. Escribir cualquier valor en este registro le indica al hardware que el software está corriendo correctamente. Si transcurre un corto periodo sin escrituras en esta dirección, el circuito integrado reiniciará físicamente la CPU.
+*   **[CMakeLists.txt](file:///home/mrg/share/github/pacman-emulator-cpp/pacman_cpp/CMakeLists.txt)**: Script de construcción de CMake. Configura el estándar C++20, gestiona la descarga automática y el enlace estático de la biblioteca **Raylib 5.0** (a través de `FetchContent`) y compila el ejecutable nativo.
+*   **[src/main.cpp](file:///home/mrg/share/github/pacman-emulator-cpp/pacman_cpp/src/main.cpp)**: Punto de entrada del programa. Se encarga de inicializar el motor del juego, ejecutar el bucle principal de renderizado y física, y liberar los recursos del sistema al salir.
+*   **[src/game.hpp](file:///home/mrg/share/github/pacman-emulator-cpp/pacman_cpp/src/game.hpp) / [game.cpp](file:///home/mrg/share/github/pacman-emulator-cpp/pacman_cpp/src/game.cpp)**: Coordina el flujo global del juego. Implementa el bucle principal sincronizado a la frecuencia exacta del hardware arcade (~60.606 Hz). También se encarga de:
+    *   Cargar dinámicamente un archivo ROM de Pac-Man original (`pacman.bin`) si está presente en el directorio.
+    *   Generar un mapa e interactividad de respaldo por defecto (para pruebas en caso de que no haya ROM).
+    *   Procesar entradas de teclado nativas y mapearlas a las direcciones simuladas correspondientes del hardware.
+    *   Realizar comprobaciones básicas de colisiones y actualizar el estado de las pastillas y puntuaciones en formato BCD.
+*   **[src/memory.hpp](file:///home/mrg/share/github/pacman-emulator-cpp/pacman_cpp/src/memory.hpp) / [src/memory.cpp](file:///home/mrg/share/github/pacman-emulator-cpp/pacman_cpp/src/memory.cpp)**: Simula de forma precisa el mapa de memoria física y el bus de datos del hardware de Pac-Man. Define los rangos direccionables (`ROM`, `VRAM`, `Color RAM`, `System RAM`, registros de E/S de escritura/lectura y el Watchdog Reset). Incluye utilidades para decodificar puntuaciones almacenadas en el formato original BCD (Binary Coded Decimal).
+*   **[src/renderer.hpp](file:///home/mrg/share/github/pacman-emulator-cpp/pacman_cpp/src/renderer.hpp) / [src/renderer.cpp](file:///home/mrg/share/github/pacman-emulator-cpp/pacman_cpp/src/renderer.cpp)**: Módulo de renderizado gráfico basado en Raylib. Lee directamente las estructuras de la VRAM y la Color RAM virtuales del sistema para dibujar el laberinto, los muros vectoriales, las pastillas y energizantes (con efectos de parpadeo). Adicionalmente:
+    *   Renderiza a Pac-Man (Sprite 0) de forma procedural como un sector circular animado que abre y cierra la boca según su movimiento.
+    *   Dibuja de forma procedural a los cuatro fantasmas clásicos (Blinky, Pinky, Inky y Clyde) replicando sus colores y la oscilación característica de sus cuerpos y ojos.
+    *   Pinta el HUD clásico con el puntaje actual del jugador, el récord histórico de la máquina (High Score) y las vidas restantes.
 
 ---
 
-## 3. Requisitos de Compilación y Ensamblado
+## 2. Requisitos y Compilación del Port Nativo (C++)
 
-Para ensamblar el archivo de texto estructurado `pacman.asm` (que deberás haber descargado localmente en la raíz del proyecto según lo indicado en la Sección 1) y convertirlo en un binario ejecutable de Z80, se requiere un **compilador cruzado (cross-assembler) Z80**. 
+Para compilar y ejecutar el port en C++ necesitas:
+1. Un compilador compatible con **C++20** (GCC 10+, Clang 10+ o MSVC 2019+).
+2. **CMake** versión 3.12 o superior instalado.
+3. Conexión a Internet activa (solo en la primera compilación) para que CMake descargue la biblioteca Raylib de forma automática.
 
-El ensamblador recomendado por su compatibilidad directa con la sintaxis del archivo es **Pasmo**.
+### Instrucciones de Compilación (Linux / macOS)
 
-### Instalación de Pasmo
-*   **Windows**: Puede descargar el ejecutable de Pasmo directamente de su sitio oficial o mediante repositorios de software retro.
-*   **Linux (Ubuntu/Debian)**: 
-    ```bash
-    sudo apt-get update
-    sudo apt-get install pasmo
-    ```
-*   **macOS**: Disponible a través de Homebrew o compitiendo desde la fuente.
-
-### Comandos de Ensamblado
-Abra una consola en la raíz de este proyecto y ejecute:
+Abre una terminal en la raíz del proyecto y ejecuta los siguientes comandos:
 
 ```bash
-# Compilar a binario de Z80 puro (Raw Binary)
-pasmo --bin pacman.asm pacman.bin
+# Crear y acceder al directorio de construcción
+mkdir -p build && cd build
+
+# Configurar el proyecto con CMake (añadir -DCMAKE_POLICY_VERSION_MINIMUM=3.5 si da error en CMake moderno)
+cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ../pacman_cpp
+
+# Compilar el ejecutable
+make
+
+# Ejecutar el juego
+./pacman_native
 ```
 
-Si desea generar una tabla de símbolos detallada para tareas de depuración o investigación profunda de direcciones de etiquetas:
+### Controles de Juego
+*   **FLECHAS DE DIRECCIÓN (Teclado)**: Mover a Pac-Man en las cuatro direcciones espaciales.
+*   **Mecánica**: Comer las pastillas incrementará tu puntuación y se actualizará automáticamente en el HUD superior en tiempo real.
+
+---
+
+## 3. Trabajo con el Ensamblador Z80 Original (Opcional)
+
+Si eres un desarrollador avanzado o investigador que desea trabajar con el código en ensamblador original en formato `.asm` o interactuar con el juego a través de emuladores arcade tradicionales como MAME, esta sección detalla los pasos opcionales para realizarlo.
+
+> [!NOTE]
+> Por motivos de copyright, el código fuente completo en ensamblador (`pacman.asm`) no se distribuye en este repositorio. Debes descargarlo o suministrarlo por separado para realizar estos pasos opcionales.
+
+### A. Ensamblado con Pasmo
+Para compilar el archivo `.asm` y obtener un bloque binario plano de **16 KB (16,384 bytes)** que representa toda la ROM del juego, se utiliza el cross-assembler **Pasmo**:
 
 ```bash
+# Compilar a binario plano Z80
+pasmo --bin pacman.asm pacman.bin
+
+# Generar opcionalmente una tabla de símbolos de depuración
 pasmo --bin pacman.asm pacman.bin pacman.sym
 ```
 
----
+El archivo resultante `pacman.bin` puede ser copiado a la carpeta de ejecución de `pacman_native` para que el simulador lo lea dinámicamente.
 
-## 4. Requisitos y Proceso de Ejecución (Emulación)
+### B. Emulación en MAME (Opcional)
+Si deseas ejecutar la ROM en el emulador **MAME**, es necesario dividir el bloque binario en los cuatro chips físicos originales de **4 KB** cada uno:
 
-Debido a que Pac-Man corre en un hardware arcade propietario de 1980 y no en un ordenador genérico Z80, el archivo compilado `pacman.bin` no se puede ejecutar directamente en un emulador de ZX Spectrum o MSX sin modificaciones estructurales drásticas.
-
-Existen dos alternativas principales para ejecutar el código:
-
-### Método A: Emulación en MAME (Recomendado para pruebas reales)
-MAME (Multiple Arcade Machine Emulator) es el estándar de emulación arcade. Sin embargo, MAME espera que el código ROM esté fragmentado en los cuatro chips físicos originales de **4 KB cada uno**. 
-
-Los nombres y rangos de memoria de estos chips son:
-1.  **`pacman.6e`**: Contiene el código de `0000h` a `0FFFh` (primeros 4096 bytes).
-2.  **`pacman.6f`**: Contiene el código de `1000h` a `1FFFh` (siguientes 4096 bytes).
-3.  **`pacman.6h`**: Contiene el código de `2000h` a `2FFFh` (siguientes 4096 bytes).
-4.  **`pacman.6j`**: Contiene el código de `3000h` a `3FFFh` (últimos 4096 bytes).
+1.  **`pacman.6e`**: Rango `0000h` a `0FFFh`.
+2.  **`pacman.6f`**: Rango `1000h` a `1FFFh`.
+3.  **`pacman.6h`**: Rango `2000h` a `2FFFh`.
+4.  **`pacman.6j`**: Rango `3000h` a `3FFFh`.
 
 #### Script de Automatización (Python)
-Para facilitar este proceso, puede ejecutar el siguiente script de Python (`split_rom.py`) en la raíz del proyecto para dividir de forma automática `pacman.bin` tras compilarlo:
+Puedes usar el script `split_rom.py` proporcionado en el proyecto para dividir de forma automática tu binario compilado `pacman.bin` y empaquetarlo en un archivo ZIP compatible con MAME:
 
-```python
-import os
-import zipfile
-
-def split_and_zip_roms():
-    bin_file = "pacman.bin"
-    if not os.path.exists(bin_file):
-        print(f"Error: {bin_file} no encontrado. Ejecute pasmo primero.")
-        return
-
-    with open(bin_file, "rb") as f:
-        data = f.read()
-
-    if len(data) != 16384:
-        print(f"Advertencia: El archivo compilado mide {len(data)} bytes en lugar de 16384.")
-        # Rellenar con ceros si es más pequeño
-        data = data.ljust(16384, b'\x00')
-
-    rom_splits = {
-        "pacman.6e": data[0:4096],
-        "pacman.6f": data[4096:8192],
-        "pacman.6h": data[8192:12288],
-        "pacman.6j": data[12288:16384]
-    }
-
-    # Escribir los archivos locales
-    for name, content in rom_splits.items():
-        with open(name, "wb") as out_f:
-            out_f.write(content)
-        print(f"Creado: {name} ({len(content)} bytes)")
-
-    # Empaquetar en pacman.zip para que MAME lo reconozca
-    zip_name = "pacman.zip"
-    with zipfile.ZipFile(zip_name, "w") as zip_f:
-        for name in rom_splits.keys():
-            zip_f.write(name)
-            os.remove(name) # Limpiar archivos sueltos
-    
-    print(f"\n¡Éxito! Archivo '{zip_name}' generado de manera óptima.")
-    print("Coloque 'pacman.zip' en su directorio de ROMs de MAME y ejecute:")
-    print("  mame pacman")
-
-if __name__ == "__main__":
-    split_and_zip_roms()
+```bash
+python3 split_rom.py
+```
+Esto creará el archivo `pacman.zip`. Cópialo al directorio de ROMs de MAME y ejecútalo mediante:
+```bash
+mame pacman
 ```
 
+---
+
+## 4. Mapa de Memoria del Hardware Simulado (Referencia)
+
+El bus de memoria física direccionado de 16 bits (`0000h` a `FFFFh`) que simula nuestra clase `PacmanMemory` tiene la siguiente estructura técnica:
+
+| Rango de Direcciones (Hex) | Tamaño | Descripción del Componente / Función |
+| :--- | :--- | :--- |
+| `0000h` - `3FFFh` | 16 KB | **ROM del Juego**: Almacena el código ejecutable de Z80 y las tablas de datos fijos. |
+| `4000h` - `43FFh` | 1 KB | **Video RAM (VRAM)**: Mapeo bidimensional de la matriz de baldosas (tiles) en pantalla. |
+| `4400h` - `47FFh` | 1 KB | **Color RAM**: Mapeo de colores y atributos asociados a cada mosaico en pantalla. |
+| `4800h` - `4BFFh` | 1 KB | Espejo auxiliar de la RAM de Sistema. |
+| `4C00h` - `4FFFh` | 1 KB | **RAM del Sistema (Working RAM)**: Variables del juego, puntuaciones y estados. |
+| `5000h` - `50FFh` | 256 B | **I/O Mapeado en Memoria**: Puertos de entrada/salida física (controles, dip switches, etc.). |
+
+### Direcciones de Variables Clave
+*   **`4370h`**: Número de jugadores (`00h` = 1 Jugador, `01h` = 2 Jugadores).
+*   **`4E66h`**: Estado y registro del monedero arcade.
+*   **`4E6Fh`**: Cantidad de vidas iniciales del jugador.
+*   **`4E80h` - `4E83h`**: Puntuación del Jugador 1 (almacenada en BCD little-endian de 4 bytes).
+*   **`4E88h` - `4E8Bh`**: Récord Máximo (High Score) histórico de la máquina (BCD).
+*   **`5000h` (Lectura)**: Puerto `IN0`. Mapea controles del Jugador 1 (Arriba, Izquierda, Derecha, Abajo, Moneda, etc.).
+*   **`5002h` (Lectura)**: Puerto de Dip Switches `DSW1` (Configuración de dificultad y créditos).
+*   **`50C0h` (Escritura)**: **Watchdog Reset**. Escribir aquí reinicia el temporizador de reinicio físico de la CPU.
