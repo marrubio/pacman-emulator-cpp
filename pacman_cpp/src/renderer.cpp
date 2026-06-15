@@ -73,7 +73,6 @@ void PacmanRenderer::DrawBackgroundGrid(const PacmanMemory& memory) {
     const int tile_rows = 36;
     const int vram_stride = 28;
     const int tile_size = 8 * m_scale;
-    const int wall_thickness = std::max(1, m_scale * 2);
     const int maze_offset_y = kTopHudHeight * m_scale;
 
     auto is_wall_tile = [&](int x, int y) -> bool {
@@ -112,20 +111,66 @@ void PacmanRenderer::DrawBackgroundGrid(const PacmanMemory& memory) {
 
             // Dibujar únicamente el contorno visible de los muros para evitar la rejilla
             // interna y recuperar el grosor visual del pasillo del arcade original.
+            // Dibujar contorno de doble línea para los muros (estilo arcade recreativa)
             if (tile > 0x00 && tile <= 0x0F) {
-                if (!is_wall_tile(x, y - 1)) {
-                    DrawRectangle(screen_x, screen_y, tile_size, wall_thickness, tile_color);
+                const int line_thickness = std::max(1, m_scale);
+                const int gap = std::max(1, m_scale);
+                const int inset = m_scale; // Desplazar hacia adentro 1 píxel arcade
+
+                bool has_top = !is_wall_tile(x, y - 1);
+                bool has_bottom = !is_wall_tile(x, y + 1);
+                bool has_left = !is_wall_tile(x - 1, y);
+                bool has_right = !is_wall_tile(x + 1, y);
+
+                bool is_1tile_vertical = has_left && has_right;
+                bool is_1tile_horizontal = has_top && has_bottom;
+
+                // 1. Límite Superior
+                if (has_top) {
+                    DrawRectangle(screen_x, screen_y + inset, tile_size, line_thickness, tile_color);
+                    if (!is_1tile_horizontal && !is_1tile_vertical) {
+                        int x_start = has_left ? (screen_x + line_thickness + gap + inset) : screen_x;
+                        int x_end = has_right ? (screen_x + tile_size - line_thickness - gap - inset) : (screen_x + tile_size);
+                        DrawRectangle(x_start, screen_y + line_thickness + gap + inset, x_end - x_start, line_thickness, tile_color);
+                    }
                 }
-                if (!is_wall_tile(x, y + 1)) {
-                    DrawRectangle(screen_x, screen_y + tile_size - wall_thickness, tile_size, wall_thickness, tile_color);
+
+                // 2. Límite Inferior
+                if (has_bottom) {
+                    DrawRectangle(screen_x, screen_y + tile_size - line_thickness - inset, tile_size, line_thickness, tile_color);
+                    if (!is_1tile_horizontal && !is_1tile_vertical) {
+                        int x_start = has_left ? (screen_x + line_thickness + gap + inset) : screen_x;
+                        int x_end = has_right ? (screen_x + tile_size - line_thickness - gap - inset) : (screen_x + tile_size);
+                        DrawRectangle(x_start, screen_y + tile_size - 2 * line_thickness - gap - inset, x_end - x_start, line_thickness, tile_color);
+                    }
                 }
-                if (!is_wall_tile(x - 1, y)) {
-                    DrawRectangle(screen_x, screen_y, wall_thickness, tile_size, tile_color);
+
+                // 3. Límite Izquierdo
+                if (has_left) {
+                    DrawRectangle(screen_x + inset, screen_y, line_thickness, tile_size, tile_color);
+                    if (!is_1tile_vertical && !is_1tile_horizontal) {
+                        int y_start = has_top ? (screen_y + line_thickness + gap + inset) : screen_y;
+                        int y_end = has_bottom ? (screen_y + tile_size - line_thickness - gap - inset) : (screen_y + tile_size);
+                        DrawRectangle(screen_x + line_thickness + gap + inset, y_start, line_thickness, y_end - y_start, tile_color);
+                    }
                 }
-                if (!is_wall_tile(x + 1, y)) {
-                    DrawRectangle(screen_x + tile_size - wall_thickness, screen_y, wall_thickness, tile_size, tile_color);
+
+                // 4. Límite Derecho
+                if (has_right) {
+                    DrawRectangle(screen_x + tile_size - line_thickness - inset, screen_y, line_thickness, tile_size, tile_color);
+                    if (!is_1tile_vertical && !is_1tile_horizontal) {
+                        int y_start = has_top ? (screen_y + line_thickness + gap + inset) : screen_y;
+                        int y_end = has_bottom ? (screen_y + tile_size - line_thickness - gap - inset) : (screen_y + tile_size);
+                        DrawRectangle(screen_x + tile_size - 2 * line_thickness - gap - inset, y_start, line_thickness, y_end - y_start, tile_color);
+                    }
                 }
             } 
+            // Renderizar la puerta de la casa de fantasmas (baldosa 0x1B)
+            else if (tile == 0x1B) {
+                int y_center = screen_y + tile_size / 2;
+                int thickness = std::max(1, m_scale);
+                DrawRectangle(screen_x, y_center - thickness / 2, tile_size, thickness, tile_color);
+            }
             // Renderizar pastillas normales (pequeñas) - Mapeadas a la baldosa 0x10
             else if (tile == 0x10) {
                 int center_x = screen_x + tile_size / 2;
@@ -168,7 +213,7 @@ void PacmanRenderer::DrawSprites(const PacmanMemory& memory) {
 
         // Conversión a coordenadas de pantalla (Pac-Man escala X de derecha a izquierda e Y invertida)
         const int hardware_sprite_size = 16 * m_scale;
-        const int size = 8 * m_scale;
+        const int size = 15 * m_scale;
         const int sprite_inset = (hardware_sprite_size - size) / 2;
         int screen_x = (272 - x_reg) * m_scale + sprite_inset;
         int screen_y = maze_offset_y + (y_reg - 16 - kHiddenTopMazePixels) * m_scale + sprite_inset;
@@ -200,27 +245,28 @@ void PacmanRenderer::DrawSprites(const PacmanMemory& memory) {
         // 2. Dibujar a los Fantasmas (Sprites 1 a 4)
         else if (i >= 1 && i <= 4) {
             float cx = (float)screen_x + size/2.f;
+            float unit = (float)size / 8.f;
             
             // Cuerpo de campana del fantasma
-            DrawRectangle(screen_x + 1*m_scale, screen_y + 3*m_scale, 6*m_scale, 4*m_scale, sprite_color);
-            DrawCircle(cx, (float)screen_y + 3.f*m_scale, 3.f*m_scale, sprite_color);
+            DrawRectangle(screen_x + (int)(1.f * unit), screen_y + (int)(3.f * unit), (int)(6.f * unit), (int)(4.f * unit), sprite_color);
+            DrawCircle((int)cx, (int)(screen_y + 3.f * unit), 3.f * unit, sprite_color);
             
             // Tres ondas/picos en la parte inferior del cuerpo
-            DrawTriangle({(float)screen_x + 1*m_scale, (float)screen_y + 7*m_scale},
-                         {(float)screen_x + 2.5f*m_scale, (float)screen_y + 8*m_scale},
-                         {(float)screen_x + 4*m_scale, (float)screen_y + 7*m_scale}, sprite_color);
-            DrawTriangle({(float)screen_x + 3*m_scale, (float)screen_y + 7*m_scale},
-                         {(float)screen_x + 4*m_scale, (float)screen_y + 8*m_scale},
-                         {(float)screen_x + 5*m_scale, (float)screen_y + 7*m_scale}, sprite_color);
-            DrawTriangle({(float)screen_x + 4*m_scale, (float)screen_y + 7*m_scale},
-                         {(float)screen_x + 5.5f*m_scale, (float)screen_y + 8*m_scale},
-                         {(float)screen_x + 7*m_scale, (float)screen_y + 7*m_scale}, sprite_color);
+            DrawTriangle({(float)screen_x + 1.f * unit, (float)screen_y + 7.f * unit},
+                         {(float)screen_x + 2.5f * unit, (float)screen_y + 8.f * unit},
+                         {(float)screen_x + 4.f * unit, (float)screen_y + 7.f * unit}, sprite_color);
+            DrawTriangle({(float)screen_x + 3.f * unit, (float)screen_y + 7.f * unit},
+                         {(float)screen_x + 4.f * unit, (float)screen_y + 8.f * unit},
+                         {(float)screen_x + 5.f * unit, (float)screen_y + 7.f * unit}, sprite_color);
+            DrawTriangle({(float)screen_x + 4.f * unit, (float)screen_y + 7.f * unit},
+                         {(float)screen_x + 5.5f * unit, (float)screen_y + 8.f * unit},
+                         {(float)screen_x + 7.f * unit, (float)screen_y + 7.f * unit}, sprite_color);
 
             // Dibujar ojos (blancos con pupilas azules) mirando al frente
-            DrawCircle(screen_x + 2.5f*m_scale, screen_y + 3*m_scale, 1.2f*m_scale, WHITE);
-            DrawCircle(screen_x + 5.5f*m_scale, screen_y + 3*m_scale, 1.2f*m_scale, WHITE);
-            DrawCircle(screen_x + 2.5f*m_scale, screen_y + 3*m_scale, 0.6f*m_scale, DARKBLUE);
-            DrawCircle(screen_x + 5.5f*m_scale, screen_y + 3*m_scale, 0.6f*m_scale, DARKBLUE);
+            DrawCircle((int)(screen_x + 2.5f * unit), (int)(screen_y + 3.f * unit), 1.2f * unit, WHITE);
+            DrawCircle((int)(screen_x + 5.5f * unit), (int)(screen_y + 3.f * unit), 1.2f * unit, WHITE);
+            DrawCircle((int)(screen_x + 2.5f * unit), (int)(screen_y + 3.f * unit), 0.6f * unit, DARKBLUE);
+            DrawCircle((int)(screen_x + 5.5f * unit), (int)(screen_y + 3.f * unit), 0.6f * unit, DARKBLUE);
         }
     }
 }

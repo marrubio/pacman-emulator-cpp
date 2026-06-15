@@ -154,7 +154,7 @@ void Game::InitializeDefaultMaze() {
         "######.##### ## #####.######", // Row 11
         "     #.##### ## #####.#     ", // Row 12
         "     #.##          ##.#     ", // Row 13
-        "     #.## ######## ##.#     ", // Row 14
+        "     #.## ###--### ##.#     ", // Row 14
         "######.## #      # ##.######", // Row 15
         "      .   # GGGG #   .      ", // Row 16 (Túneles laterales)
         "######.## #      # ##.######", // Row 17
@@ -191,6 +191,9 @@ void Game::InitializeDefaultMaze() {
             if (ch == '#') {
                 tile_value = 0x01; // Baldosa de muro
                 color_attr = 0x07; // Atributo azul para muros
+            } else if (ch == '-') {
+                tile_value = 0x1B; // Baldosa de puerta
+                color_attr = 0x02; // Atributo rosa para la puerta
             } else if (ch == '.') {
                 tile_value = 0x10; // Baldosa de pastilla
                 color_attr = 0x02; // Atributo color piel
@@ -214,8 +217,8 @@ void Game::InitializeDefaultMaze() {
     // 3. Inicializar posiciones de los Sprites en los registros emulados
     // Las coordenadas X de sprite siguen la convención del hardware: X decrece hacia la derecha.
     // Estos valores compensan el inset del renderer para centrar cada sprite en su casilla.
-    // Sprite 0: Pac-Man (Posición inicial en el laberinto: X = 116, Y = 208)
-    m_memory.WriteByte(0x5060, 208); // Posición Y
+    // Sprite 0: Pac-Man (Posición inicial en el laberinto: X = 164, Y = 216)
+    m_memory.WriteByte(0x5060, 216); // Posición Y
     m_memory.WriteByte(0x5061, 164); // Posición X
 
     // Sprite 1: Blinky (Fantasma Rojo)
