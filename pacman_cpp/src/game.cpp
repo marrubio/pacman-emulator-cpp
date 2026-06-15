@@ -107,7 +107,7 @@ void Game::Update(double delta_time) {
     int tile_y = py / 8;
 
     if (tile_x >= 0 && tile_x < 28 && tile_y >= 0 && tile_y < 36) {
-        uint16_t tile_address = 0x4000 + (tile_y * 32 + tile_x);
+        uint16_t tile_address = 0x4000 + (tile_y * 28 + tile_x);
         uint8_t tile_content = m_memory.ReadByte(tile_address);
 
         // Si Pac-Man está sobre una pastilla (tile 0x10) o energizante (tile 0x14)
@@ -181,8 +181,8 @@ void Game::InitializeDefaultMaze() {
     // 1. Cargar el mapa ASCII en la VRAM emulada
     for (int y = 0; y < 36; ++y) {
         for (int x = 0; x < 28; ++x) {
-            uint16_t tile_address = 0x4000 + (y * 32 + x);
-            uint16_t color_address = 0x4400 + (y * 32 + x);
+            uint16_t tile_address = 0x4000 + (y * 28 + x);
+            uint16_t color_address = 0x4400 + (y * 28 + x);
 
             char ch = original_maze[y][x];
             uint8_t tile_value = 0x00;
@@ -212,23 +212,25 @@ void Game::InitializeDefaultMaze() {
     m_memory.WriteByte(0x4E89, 0x00);
 
     // 3. Inicializar posiciones de los Sprites en los registros emulados
+    // Las coordenadas X de sprite siguen la convención del hardware: X decrece hacia la derecha.
+    // Estos valores compensan el inset del renderer para centrar cada sprite en su casilla.
     // Sprite 0: Pac-Man (Posición inicial en el laberinto: X = 116, Y = 208)
     m_memory.WriteByte(0x5060, 208); // Posición Y
-    m_memory.WriteByte(0x5061, 116); // Posición X
+    m_memory.WriteByte(0x5061, 164); // Posición X
 
     // Sprite 1: Blinky (Fantasma Rojo)
-    m_memory.WriteByte(0x5062, 112); // Posición Y
-    m_memory.WriteByte(0x5063, 116); // Posición X
+    m_memory.WriteByte(0x5062, 140); // Posición Y
+    m_memory.WriteByte(0x5063, 180); // Posición X
 
     // Sprite 2: Pinky (Fantasma Rosa)
-    m_memory.WriteByte(0x5064, 136); // Posición Y
-    m_memory.WriteByte(0x5065, 116); // Posición X
+    m_memory.WriteByte(0x5064, 140); // Posición Y
+    m_memory.WriteByte(0x5065, 172); // Posición X
 
     // Sprite 3: Inky (Fantasma Azul)
-    m_memory.WriteByte(0x5066, 136); // Posición Y
-    m_memory.WriteByte(0x5067, 96);  // Posición X
+    m_memory.WriteByte(0x5066, 140); // Posición Y
+    m_memory.WriteByte(0x5067, 164); // Posición X
 
     // Sprite 4: Clyde (Fantasma Naranja)
-    m_memory.WriteByte(0x5068, 136); // Posición Y
-    m_memory.WriteByte(0x5069, 136); // Posición X
+    m_memory.WriteByte(0x5068, 140); // Posición Y
+    m_memory.WriteByte(0x5069, 156); // Posición X
 }
