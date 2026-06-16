@@ -20,6 +20,8 @@ private:
     PacmanMemory  m_memory;
     PacmanRenderer m_renderer;
     bool           m_is_running;
+    uint8_t        m_last_px;
+    uint8_t        m_last_py;
 
     // Métodos internos
     void ProcessInput();

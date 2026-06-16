@@ -20,6 +20,9 @@ bool Game::Initialize() {
     // 3. Rellenar la memoria simulada con el mapa y configuraciones iniciales
     InitializeDefaultMaze();
 
+    m_last_px = m_memory.ReadByte(0x5061);
+    m_last_py = m_memory.ReadByte(0x5060);
+
     m_is_running = true;
     return true;
 }
@@ -56,43 +59,150 @@ void Game::Shutdown() {
     std::cout << "Juego finalizado de manera correcta." << std::endl;
 }
 
+static bool CheckWallCollision(const PacmanMemory& memory, uint8_t px, uint8_t py) {
+    uint8_t px_vram = 272 - px;
+    uint8_t py_vram = py - 16;
+
+    int box_size = 4;
+    int offset = 6;
+
+    int x_start = px_vram + offset;
+    int y_start = py_vram + offset;
+
+    const uint8_t* vram = memory.GetVRAMPtr();
+
+    for (int y = y_start; y < y_start + box_size; ++y) {
+        for (int x = x_start; x < x_start + box_size; ++x) {
+            int tile_x = x / 8;
+            int tile_y = y / 8;
+
+            if (tile_x >= 0 && tile_x < 28 && tile_y >= 0 && tile_y < 36) {
+                uint8_t tile = vram[tile_y * 28 + tile_x];
+                if (tile > 0x00 && tile <= 0x0F) {
+                    return true;
+                }
+            } else {
+                return true; // Fuera del laberinto se considera muro
+            }
+        }
+    }
+    return false;
+}
+
 void Game::ProcessInput() {
     // Obtener la posición actual de Pac-Man desde la memoria física emulada
     // Registros en 5060h y 5061h
     uint8_t py = m_memory.ReadByte(0x5060);
     uint8_t px = m_memory.ReadByte(0x5061);
+    uint8_t direction = m_memory.ReadByte(0x5040); // 0=Derecha, 1=Izquierda, 2=Arriba, 3=Abajo
 
     int speed = 1; // Velocidad de Pac-Man en píxeles por frame
-
-    // Procesar teclado mediante Raylib y escribir en la memoria emulada
-    if (IsKeyDown(KEY_RIGHT)) {
-        px -= speed; // En hardware real de Pac-Man, X decrece hacia la derecha
-    }
-    if (IsKeyDown(KEY_LEFT)) {
-        px += speed; // X incrementa hacia la izquierda
-    }
-    if (IsKeyDown(KEY_UP)) {
-        py -= speed; // Y decrece hacia arriba
-    }
-    if (IsKeyDown(KEY_DOWN)) {
-        py += speed; // Y incrementa hacia abajo
-    }
-
-    // Mantener dentro de los límites de la pantalla playable
-    if (px < 8) px = 8;
-    if (px > 220) px = 220;
-    if (py < 16) py = 16;
-    if (py > 240) py = 240;
-
-    // Escribir la nueva posición de Pac-Man de vuelta a los registros
-    m_memory.WriteByte(0x5060, py);
-    m_memory.WriteByte(0x5061, px);
 
     // Mapear los controles también a los registros de puertos de entrada IN0 (5000h)
     m_memory.SetP1Button(0x01, IsKeyDown(KEY_UP));    // Bit 0: Arriba
     m_memory.SetP1Button(0x02, IsKeyDown(KEY_LEFT));  // Bit 1: Izquierda
     m_memory.SetP1Button(0x04, IsKeyDown(KEY_RIGHT)); // Bit 2: Derecha
     m_memory.SetP1Button(0x08, IsKeyDown(KEY_DOWN));  // Bit 3: Abajo
+
+    uint8_t next_px = px;
+    uint8_t next_py = py;
+
+    // Procesar teclado mediante Raylib y escribir en la memoria emulada
+    if (IsKeyDown(KEY_RIGHT)) {
+        next_px -= speed; // En hardware real de Pac-Man, X decrece hacia la derecha
+        direction = 0;
+    }
+    if (IsKeyDown(KEY_LEFT)) {
+        next_px += speed; // X incrementa hacia la izquierda
+        direction = 1;
+    }
+    if (IsKeyDown(KEY_UP)) {
+        next_py -= speed; // Y decrece hacia arriba
+        direction = 2;
+    }
+    if (IsKeyDown(KEY_DOWN)) {
+        next_py += speed; // Y incrementa hacia abajo
+        direction = 3;
+    }
+
+    // Mantener dentro de los límites de la pantalla playable usando aritmética de 8 bits
+    uint8_t px_vram = 16 - next_px;
+    if (py >= 140 && py <= 148) {
+        // Túnel de escape
+        if (px_vram > 224 && px_vram < 255) {
+            next_px = 56; // Reaparece por la derecha
+        } else if (px_vram > 216 && px_vram <= 224) {
+            next_px = 16; // Reaparece por la izquierda
+        }
+    } else {
+        // Fuera del túnel, limitar a la pantalla visible
+        if (px_vram > 216 && px_vram < 240) {
+            next_px = 56; // Limitar a la derecha
+        } else if (px_vram > 240) {
+            next_px = 16; // Limitar a la izquierda
+        }
+    }
+
+    uint8_t py_vram = next_py - 16;
+    if (py_vram < 16) {
+        next_py = 32; // Limitar a fila 2
+    } else if (py_vram > 242) {
+        next_py = 2;  // Limitar a fila 32 (permitiendo bajar 2 píxeles más para el pasillo inferior)
+    }
+
+    // Verificar colisiones con muros
+    if (next_px != px || next_py != py) {
+        if (CheckWallCollision(m_memory, next_px, next_py)) {
+            bool moved = false;
+            
+            // Intentar deslizarse: mover solo en horizontal
+            if (next_px != px && !CheckWallCollision(m_memory, next_px, py)) {
+                px = next_px;
+                moved = true;
+            }
+            // Intentar deslizarse: mover solo en vertical
+            if (next_py != py && !CheckWallCollision(m_memory, px, next_py)) {
+                py = next_py;
+                moved = true;
+            }
+
+            if (!moved) {
+                // No se pudo realizar el movimiento. Mostrar traza de colisión.
+                uint8_t cx_vram = 272 - next_px;
+                uint8_t cy_vram = next_py - 16;
+                int crash_tile_x = cx_vram / 8;
+                int crash_tile_y = cy_vram / 8;
+                static int last_crash_x = -1;
+                static int last_crash_y = -1;
+                if (crash_tile_x != last_crash_x || crash_tile_y != last_crash_y) {
+                    std::cout << "[COLISIÓN] Pac-Man chocó con un muro en la baldosa [" 
+                              << crash_tile_x << ", " << crash_tile_y << "]" << std::endl;
+                    last_crash_x = crash_tile_x;
+                    last_crash_y = crash_tile_y;
+                }
+            }
+        } else {
+            px = next_px;
+            py = next_py;
+        }
+    }
+
+    // Escribir la nueva posición de Pac-Man de vuelta a los registros
+    m_memory.WriteByte(0x5060, py);
+    m_memory.WriteByte(0x5061, px);
+    m_memory.WriteByte(0x5040, direction);
+
+    // Escribir en el log si la posición ha cambiado
+    if (px != m_last_px || py != m_last_py) {
+        uint8_t tx_vram = 272 - px;
+        uint8_t ty_vram = py - 16;
+        int tile_x = tx_vram / 8;
+        int tile_y = ty_vram / 8;
+        std::cout << "[POSICIÓN] Pac-Man se movió a: X = " << (int)px << ", Y = " << (int)py 
+                  << " (Baldosa: [" << tile_x << ", " << tile_y << "])" << std::endl;
+        m_last_px = px;
+        m_last_py = py;
+    }
 }
 
 void Game::Update(double delta_time) {
@@ -102,9 +212,11 @@ void Game::Update(double delta_time) {
     uint8_t py = m_memory.ReadByte(0x5060);
     uint8_t px = m_memory.ReadByte(0x5061);
 
-    // Convertir la coordenada en píxeles de Pac-Man a coordenadas de baldosa (tile) de 8x8
-    int tile_x = (272 - px) / 8;
-    int tile_y = py / 8;
+    // Convertir la coordenada en píxeles de Pac-Man a coordenadas de baldosa (tile) de 8x8 usando aritmética de 8 bits
+    uint8_t tx_vram = 272 - px;
+    uint8_t ty_vram = py - 16;
+    int tile_x = tx_vram / 8;
+    int tile_y = ty_vram / 8;
 
     if (tile_x >= 0 && tile_x < 28 && tile_y >= 0 && tile_y < 36) {
         uint16_t tile_address = 0x4000 + (tile_y * 28 + tile_x);
@@ -217,9 +329,10 @@ void Game::InitializeDefaultMaze() {
     // 3. Inicializar posiciones de los Sprites en los registros emulados
     // Las coordenadas X de sprite siguen la convención del hardware: X decrece hacia la derecha.
     // Estos valores compensan el inset del renderer para centrar cada sprite en su casilla.
-    // Sprite 0: Pac-Man (Posición inicial en el laberinto: X = 164, Y = 216)
-    m_memory.WriteByte(0x5060, 216); // Posición Y
+    // Sprite 0: Pac-Man (Posición inicial en el laberinto: X = 164, Y = 212)
+    m_memory.WriteByte(0x5060, 212); // Posición Y
     m_memory.WriteByte(0x5061, 164); // Posición X
+    m_memory.WriteByte(0x5040, 0);   // Dirección inicial: Derecha (0)
 
     // Sprite 1: Blinky (Fantasma Rojo)
     m_memory.WriteByte(0x5062, 140); // Posición Y

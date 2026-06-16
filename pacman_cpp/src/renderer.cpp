@@ -215,11 +215,13 @@ void PacmanRenderer::DrawSprites(const PacmanMemory& memory) {
         const int hardware_sprite_size = 16 * m_scale;
         const int size = 15 * m_scale;
         const int sprite_inset = (hardware_sprite_size - size) / 2;
-        int screen_x = (272 - x_reg) * m_scale + sprite_inset;
-        int screen_y = maze_offset_y + (y_reg - 16 - kHiddenTopMazePixels) * m_scale + sprite_inset;
+        uint8_t x_offset = 272 - x_reg;
+        uint8_t y_offset = y_reg - 16 - kHiddenTopMazePixels;
+        int screen_x = x_offset * m_scale + sprite_inset;
+        int screen_y = maze_offset_y + y_offset * m_scale + sprite_inset;
 
         // Si la posición está fuera del rango visible, no dibujar
-        if (x_reg == 0 || y_reg == 0) continue;
+        if (x_reg == 0 && y_reg == 0) continue;
 
         // Definir color del sprite basado en su índice
         Color sprite_color = WHITE;
@@ -232,13 +234,24 @@ void PacmanRenderer::DrawSprites(const PacmanMemory& memory) {
             default: sprite_color = GREEN; break;       // Frutas / Otros
         }
 
-        // 1. Dibujar a Pac-Man (Sprite 0) como un sector circular dinámico (abriendo boca)
+        // 1. Dibujar a Pac-Man (Sprite 0) como un sector circular dinámico (abriendo boca en la dirección correcta)
         if (i == 0) {
-            float mouth_angle = abs(sinf(GetTime() * 12.0f)) * 45.0f; // Animación de masticar
+            float mouth_angle = fabsf(sinf(GetTime() * 12.0f)) * 45.0f; // Animación de masticar
+            uint8_t direction = memory.ReadByte(0x5040); // 0=Derecha, 1=Izquierda, 2=Arriba, 3=Abajo
+            
+            float rotation = 0.0f;
+            if (direction == 0) rotation = 0.0f;
+            else if (direction == 1) rotation = 180.0f;
+            else if (direction == 2) rotation = 270.0f;
+            else if (direction == 3) rotation = 90.0f;
+
+            float start_angle = rotation + mouth_angle;
+            float end_angle = rotation + 360.0f - mouth_angle;
+
             DrawCircleSector({(float)screen_x + size/2.f, (float)screen_y + size/2.f}, 
                              size/2.f, 
-                             mouth_angle, 
-                             360.0f - mouth_angle, 
+                             start_angle, 
+                             end_angle, 
                              20, 
                              sprite_color);
         } 

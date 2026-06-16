@@ -57,7 +57,7 @@ uint8_t PacmanMemory::ReadByte(uint16_t address) const {
             case 0x00: return m_in0;
             case 0x01: return m_in1;
             case 0x02: return m_dsw1;
-            default:   return 0xFF; // Reservado / Desconectado
+            default:   return m_io_registers[reg_offset];
         }
     }
     
