@@ -336,7 +336,7 @@ void Game::InitializeDefaultMaze() {
 
     // Sprite 1: Blinky (Fantasma Rojo)
     m_memory.WriteByte(0x5062, 140); // Posición Y
-    m_memory.WriteByte(0x5063, 180); // Posición X
+    m_memory.WriteByte(0x5063, 183); // Posición X (reducido 3 en hardware = +3 píxeles a la derecha en pantalla)
 
     // Sprite 2: Pinky (Fantasma Rosa)
     m_memory.WriteByte(0x5064, 140); // Posición Y
@@ -344,9 +344,9 @@ void Game::InitializeDefaultMaze() {
 
     // Sprite 3: Inky (Fantasma Azul)
     m_memory.WriteByte(0x5066, 140); // Posición Y
-    m_memory.WriteByte(0x5067, 164); // Posición X
+    m_memory.WriteByte(0x5067, 161); // Posición X
 
     // Sprite 4: Clyde (Fantasma Naranja)
     m_memory.WriteByte(0x5068, 140); // Posición Y
-    m_memory.WriteByte(0x5069, 156); // Posición X
+    m_memory.WriteByte(0x5069, 150); // Posición X (reducido 3 en hardware = +3 píxeles a la derecha en pantalla)
 }
