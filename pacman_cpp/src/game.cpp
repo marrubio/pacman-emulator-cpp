@@ -1,6 +1,7 @@
 #include "game.hpp"
 #include "raylib.h"
 #include <iostream>
+#include <cmath>
 
 Game::Game()
     : m_is_running(false)
@@ -192,17 +193,8 @@ void Game::ProcessInput() {
     m_memory.WriteByte(0x5061, px);
     m_memory.WriteByte(0x5040, direction);
 
-    // Escribir en el log si la posición ha cambiado
-    if (px != m_last_px || py != m_last_py) {
-        uint8_t tx_vram = 272 - px;
-        uint8_t ty_vram = py - 16;
-        int tile_x = tx_vram / 8;
-        int tile_y = ty_vram / 8;
-        std::cout << "[POSICIÓN] Pac-Man se movió a: X = " << (int)px << ", Y = " << (int)py 
-                  << " (Baldosa: [" << tile_x << ", " << tile_y << "])" << std::endl;
-        m_last_px = px;
-        m_last_py = py;
-    }
+    m_last_px = px;
+    m_last_py = py;
 }
 
 void Game::Update(double delta_time) {
@@ -212,11 +204,11 @@ void Game::Update(double delta_time) {
     uint8_t py = m_memory.ReadByte(0x5060);
     uint8_t px = m_memory.ReadByte(0x5061);
 
-    // Convertir la coordenada en píxeles de Pac-Man a coordenadas de baldosa (tile) de 8x8 usando aritmética de 8 bits
+    // Convertir la coordenada del centro en píxeles de Pac-Man a coordenadas de baldosa (tile) de 8x8 usando aritmética de 8 bits
     uint8_t tx_vram = 272 - px;
     uint8_t ty_vram = py - 16;
-    int tile_x = tx_vram / 8;
-    int tile_y = ty_vram / 8;
+    int tile_x = (tx_vram + 8) / 8;
+    int tile_y = (ty_vram + 8) / 8;
 
     if (tile_x >= 0 && tile_x < 28 && tile_y >= 0 && tile_y < 36) {
         uint16_t tile_address = 0x4000 + (tile_y * 28 + tile_x);
@@ -224,6 +216,9 @@ void Game::Update(double delta_time) {
 
         // Si Pac-Man está sobre una pastilla (tile 0x10) o energizante (tile 0x14)
         if (tile_content == 0x10 || tile_content == 0x14) {
+            std::string type = (tile_content == 0x10) ? "pastilla" : "galleta";
+            HandleCollision(type);
+
             // Eliminar pastilla escribiendo 0x00 (vacío) en VRAM
             m_memory.WriteByte(tile_address, 0x00);
 
@@ -246,6 +241,46 @@ void Game::Update(double delta_time) {
             m_memory.WriteByte(0x4E80, score_low);
         }
     }
+
+    // Detección de colisiones con los fantasmas
+    for (int i = 1; i <= 4; ++i) {
+        uint8_t gy = m_memory.ReadByte(0x5060 + i * 2);
+        uint8_t gx = m_memory.ReadByte(0x5061 + i * 2);
+
+        // Ignorar si el fantasma no está activo (posición 0,0)
+        if (gx == 0 && gy == 0) {
+            m_ghost_colliding[i - 1] = false;
+            continue;
+        }
+
+        // Medir la distancia en píxeles en el espacio de coordenadas del hardware
+        int dx = static_cast<int>(px) - static_cast<int>(gx);
+        int dy = static_cast<int>(py) - static_cast<int>(gy);
+
+        // Umbral de colisión para sprites de 16x16: si se solapan más de la mitad (8 píxeles en ambos ejes)
+        bool collides = (std::abs(dx) < 8 && std::abs(dy) < 8);
+
+        if (collides) {
+            if (!m_ghost_colliding[i - 1]) {
+                m_ghost_colliding[i - 1] = true;
+                std::string ghost_name;
+                switch (i) {
+                    case 1: ghost_name = "fantasma (Blinky/Rojo)"; break;
+                    case 2: ghost_name = "fantasma (Pinky/Rosa)"; break;
+                    case 3: ghost_name = "fantasma (Inky/Azul)"; break;
+                    case 4: ghost_name = "fantasma (Clyde/Naranja)"; break;
+                    default: ghost_name = "fantasma"; break;
+                }
+                HandleCollision(ghost_name);
+            }
+        } else {
+            m_ghost_colliding[i - 1] = false;
+        }
+    }
+}
+
+void Game::HandleCollision(const std::string& object) {
+    std::cout << "Colisión de pacman con " << object << std::endl;
 }
 
 void Game::InitializeDefaultMaze() {
