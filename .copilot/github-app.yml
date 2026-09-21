@@ -1,0 +1,39 @@
+name: Rebuild and run Pac-Man emulator
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rebuild-and-run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install build and display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            build-essential \
+            cmake \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxinerama-dev \
+            libxi-dev \
+            libxrandr-dev \
+            xvfb
+
+      - name: Rebuild emulator
+        run: |
+          rm -rf build
+          cmake -S pacman_cpp -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build build --parallel
+
+      - name: Start Pac-Man emulator
+        working-directory: build
+        run: timeout --signal=TERM 30s xvfb-run --auto-servernum ./pacman_native
